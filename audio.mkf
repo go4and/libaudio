@@ -1,0 +1,35 @@
+includepath include
+
+options {
+  module_path="../marmalade"
+  module_path=".."
+}
+
+subprojects {
+  libvorbis
+  libvorbis/libvorbisfile
+  libogg
+  speex_resampler
+  atomics
+}
+
+files
+{
+  [include]
+  (include/audio)
+  Buffer.h
+  Decoder.h
+  Manager.h
+  OggFile.h
+  OnFlyDecoder.h
+  Speex.h
+  Utils.h
+
+  [src]
+  (src)
+  Decoder.cpp
+  Manager.cpp
+  OggFile.cpp
+  OnFlyDecoder.cpp
+  Utils.cpp
+}

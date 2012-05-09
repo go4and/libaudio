@@ -1,0 +1,24 @@
+library
+{
+        ".,audio"
+}
+
+includepath include
+
+subprojects {
+  atomics
+  libvorbis/libvorbisfile_library
+  libogg/libogg_library
+}
+
+files
+{
+  [include]
+  (include/audio)
+  Buffer.h
+  Decoder.h
+  Manager.h
+  OggFile.h
+  OnFlyDecoder.h
+  Utils.h
+}
