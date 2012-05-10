@@ -46,29 +46,14 @@ private:
 class Manager::Impl {
 public:
     Impl()
-        : channel_(-1), lock_(0), sourcesSize_(0), delSize_(0), pollVersion_(0), pollSize_(0), mainThread_(s3eThreadGetCurrent())
+        : thread_(0), channel_(-1), lock_(0), sourcesSize_(0), delSize_(0), pollVersion_(0), pollSize_(0), mainThread_(s3eThreadGetCurrent())
     {
         atomicsGetTable(atomics);
-
-        thread_ = s3eThreadCreate(&Impl::executeStatic, this);
     }
 
     ~Impl()
     {
-        atomicsWrite(&pollVersion_, -1);
-        
-        if(channel_ != -1)
-        {
-            s3eSoundChannelStop(channel_);
-            for(int j = 0; j != 1000 && s3eSoundChannelGetInt(channel_, S3E_CHANNEL_STATUS); ++j)
-            {
-                timespec ts;
-                ts.tv_sec = 0;
-                ts.tv_nsec = 10000000;
-                atomics.nanosleep(&ts, 0);
-            }
-        }
-        s3eThreadJoin(thread_);
+        stop(true);
 
         for(size_t i = 0; i != sourcesSize_; ++i)
             if(sources_[i]->owned())
@@ -85,6 +70,8 @@ public:
         processDelQueue();
         if(channel_ == -1)
         {
+            pollVersion_ = 0;
+            thread_ = s3eThreadCreate(&Impl::executeStatic, this);
             channel_ = s3eSoundGetFreeChannel();
             s3eSoundChannelRegister(channel_, S3E_CHANNEL_GEN_AUDIO, &Impl::genAudio, this);
 
@@ -95,16 +82,33 @@ public:
             IwAssertMsg(AUDIO_MANAGER, false, ("start on started audio manager"));
     }
 
-    void stop()
+    void stop(bool waitStop = false)
     {
+        s3eDebugTracePrintf("audio::Manager::stop(%d)", static_cast<int>(waitStop));
+
         processDelQueue();
+        
         if(channel_ != -1)
         {
+            atomicsWrite(&pollVersion_, -1);
+
             s3eSoundChannelUnRegister(channel_, S3E_CHANNEL_GEN_AUDIO);
             s3eSoundChannelStop(channel_);
+            if(waitStop)
+                for(int j = 0; j != 1000 && s3eSoundChannelGetInt(channel_, S3E_CHANNEL_STATUS); ++j)
+                {
+                    timespec ts;
+                    ts.tv_sec = 0;
+                    ts.tv_nsec = 10000000;
+                    atomics.nanosleep(&ts, 0);
+                }
+            s3eThreadJoin(thread_);
+            thread_ = 0;
             channel_ = -1;
         } else
             IwAssertMsg(AUDIO_MANAGER, false, ("stop on stopped audio manager"));
+
+        s3eDebugTracePrintf("audio::Manager::stop, done");
     }
 
     void stop(Source * source)
@@ -286,7 +290,7 @@ private:
 
     void execute()
     {
-        int pollVersion = 0;
+        int pollVersion = -1;
         size_t pollSize = 0;
         Source * polls[limit];
         for(;;)
