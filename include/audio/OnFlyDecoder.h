@@ -2,19 +2,23 @@
 
 #include <memory>
 
+#include "audio/Manager.h"
+
 namespace audio {
 
 class OggFile;
 
-class OnFlyDecoder {
+class OnFlyDecoder : public Source {
 public:
-    OnFlyDecoder(int channel);
+    OnFlyDecoder(bool owned, OggFile & file);
     ~OnFlyDecoder();
 
-    OggFile * source();
-    void reset(OggFile * source);
-    bool poll();
+    OggFile & source();
     void volume(int value);
+
+    bool poll();
+    bool pollable() { return true; }
+    int mix(int16_t * out, int limit);
 private:
     class Impl;
     std::auto_ptr<Impl> impl_;

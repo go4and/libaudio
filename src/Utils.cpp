@@ -23,10 +23,24 @@ void resample(SpeexResamplerState * resampler, int16_t * buffer, size_t & filled
     out.resize(oldSize + (static_cast<int64_t>(inlen) * outputRate / inputRate) + 1); 
     out.resize(out.capacity());
     spx_uint32_t outlen = out.size() - oldSize;
-    speex_resampler_process_int(resampler, 0, reinterpret_cast<spx_int16_t*>(buffer), &inlen, &out[oldSize], &outlen);
+    speex_resampler_process_int(resampler, 0, buffer, &inlen, &out[oldSize], &outlen);
     out.resize(oldSize + outlen);
     memmove(buffer, buffer + inlen, (filled - inlen) * 2);
     filled -= inlen;
+}
+
+inline int combine(int a, int b)
+{
+    return (a + b);//  - a * b / 0x8000;
+}
+
+inline int clamp(int v, int min, int max)
+{
+    if(v < min)
+        return min;
+    if(v > max)
+        return max;
+    return v;
 }
 
 void mix(bool mix, int16_t * out, int16_t * inp, int volume, size_t samples)
@@ -40,7 +54,7 @@ void mix(bool mix, int16_t * out, int16_t * inp, int volume, size_t samples)
             int min = limits::min();
             int max = limits::max();
             for(size_t i = 0; i != samples; ++i)
-                out[i] = std::max(min, std::min(max, inp[i] * volume / 0x100));
+                out[i] = clamp(inp[i] * volume / 0x100, min, max);
         }
     } else {
         typedef std::numeric_limits<int16_t> limits;
@@ -49,10 +63,10 @@ void mix(bool mix, int16_t * out, int16_t * inp, int volume, size_t samples)
         if(volume == 0x100)
         {
             for(size_t i = 0; i != samples; ++i)
-                out[i] = std::max(min, std::min(max, static_cast<int>(out[i]) + inp[i]));
+                out[i] = clamp(combine(out[i], inp[i]), min, max);
         } else {
             for(size_t i = 0; i != samples; ++i)
-                out[i] = std::max(min, std::min(max, static_cast<int>(out[i]) + inp[i] * volume / 0x100));
+                out[i] = clamp(combine(out[i], inp[i] * volume / 0x100), min, max);
         }
     }
 }

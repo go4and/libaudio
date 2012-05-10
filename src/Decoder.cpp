@@ -25,7 +25,7 @@ Buffer Decoder::decode(OggFile & file, int volume)
 {
     int outputRate = s3eSoundGetInt(S3E_SOUND_OUTPUT_FREQ);
     int err = 0;
-    SpeexResamplerState * resampler = speex_resampler_init(1, file.rate(), outputRate, 0, &err);
+    SpeexResamplerState * resampler = speex_resampler_init(1, file.rate(), outputRate, 10, &err);
 
     buffer_.clear();
     size_t decodeUsed = 0;

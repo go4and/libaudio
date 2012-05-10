@@ -12,16 +12,24 @@ const size_t bufferSize = 0x8000;
 
 class OnFlyDecoder::Impl {
 public:
-    Impl(int channel)
-        : channel_(channel),
-          source_(0), resampler_(0), resamplerRate_(0),
+    Impl(OggFile & source)
+        : source_(source), resampler_(0), resamplerRate_(0),
           decodeBuffer_(new int16_t[decodeBufferSize]), decodeUsed_(0),
           begin_(new int16_t[bufferSize]), volume_(0x100)
     {
         end_ = begin_ + bufferSize;
         reader_ = writer_ = reinterpret_cast<int>(begin_);
 
-        s3eSoundChannelRegister(channel_, S3E_CHANNEL_GEN_AUDIO, &Impl::genAudio, this);
+        int rate = source.rate();
+        int outputRate = s3eSoundGetInt(S3E_SOUND_OUTPUT_FREQ);
+
+        if(resamplerRate_ != rate)
+        {
+            if(resampler_)
+                speex_resampler_destroy(resampler_);
+            int err = 0;
+            resampler_ = speex_resampler_init(1, rate, outputRate, 0, &err);
+        }
     }
 
     ~Impl()
@@ -32,45 +40,13 @@ public:
             speex_resampler_destroy(resampler_);
     }
 
-    OggFile * source()
+    OggFile & source()
     {
         return source_;
     }
 
-    void reset(OggFile * source)
-    {
-        if(source == source_)
-            return;
-        
-        source_ = source;
-
-        if(source_)
-        {
-            int rate = source_->rate();
-            int outputRate = s3eSoundGetInt(S3E_SOUND_OUTPUT_FREQ);
-
-            if(resamplerRate_ != rate)
-            {
-                if(resampler_)
-                    speex_resampler_destroy(resampler_);
-                int err = 0;
-                resampler_ = speex_resampler_init(1, rate, outputRate, 0, &err);
-            }
-
-            int16 dummy[8];
-            memset(dummy, 0, sizeof(dummy));
-            s3eSoundChannelPlay(channel_, dummy, sizeof(dummy) / sizeof(dummy[0]), 0, 0);
-        } else {
-            s3eSoundChannelStop(channel_);
-/*            while(s3eSoundChannelGetInt(channel_, S3E_CHANNEL_STATUS))
-                atomics.sched_yield();*/
-        }
-    }
-
     bool poll()
     {
-        if(!source_)
-            return false;
         spx_int16_t * writer = reinterpret_cast<spx_int16_t*>(writer_);
         spx_int16_t * reader = reinterpret_cast<spx_int16_t*>(atomics.cas(&reader_, 0, 0));
         if(reader == begin_)
@@ -79,9 +55,9 @@ public:
             --reader;
         while(decodeUsed_ <= decodeBufferSize / 2)
         {
-            long res = source_->read(decodeBuffer_ + decodeUsed_, decodeBufferSize - decodeUsed_);
+            long res = source_.read(decodeBuffer_ + decodeUsed_, decodeBufferSize - decodeUsed_);
             if(res == 0)
-                source_->rewind();
+                source_.rewind();
             else
                 decodeUsed_ += res / 2;
         }
@@ -123,31 +99,26 @@ public:
         return true;
     }
 
-    static int32 genAudio(void* systemData, void* userData)
-    {
-        return static_cast<Impl*>(userData)->doGenAudio(static_cast<s3eSoundGenAudioInfo*>(systemData));
-    }
-
     void volume(int value)
     {
         volume_ = value;
     }
-private:
-    int32 doGenAudio(s3eSoundGenAudioInfo * info)
+
+    int mix(int16_t * out, int limit)
     {
         spx_int16_t * reader = reinterpret_cast<spx_int16_t*>(reader_);
         spx_int16_t * writer = reinterpret_cast<spx_int16_t*>(atomics.cas(&writer_, 0, 0));
         if(writer == reader)
             return 0;
         size_t ready = reader < writer ? writer - reader : (end_ - reader) + (writer - begin_);
-        size_t result = std::min<size_t>(std::min<size_t>(ready, info->m_NumSamples), 1024);
+        size_t result = std::min<size_t>(ready, limit);
         if(reader < writer)
-            mix(info->m_Mix, info->m_Target, reader, volume_, result);
+            audio::mix(true, out, reader, volume_, result);
         else {
             size_t tailSize = std::min<size_t>(end_ - reader, result);
-            mix(info->m_Mix, info->m_Target, reader, volume_, tailSize);
+            audio::mix(true, out, reader, volume_, tailSize);
             if(result > tailSize)
-                mix(info->m_Mix, info->m_Target, begin_, volume_, result - tailSize);
+                audio::mix(true, out + tailSize, begin_, volume_, result - tailSize);
         }
         reader += result;
         if(reader >= end_)
@@ -155,9 +126,8 @@ private:
         atomics.add(&reader_, reinterpret_cast<int>(reader) - reader_);
         return result;
     }
-
-    int channel_;
-    OggFile * source_;
+private:
+    OggFile & source_;
     SpeexResamplerState * resampler_;
     int resamplerRate_;
 
@@ -170,8 +140,8 @@ private:
     int volume_;
 };
 
-OnFlyDecoder::OnFlyDecoder(int channel)
-    : impl_(new Impl(channel))
+OnFlyDecoder::OnFlyDecoder(bool owned, OggFile & file)
+    : Source(owned), impl_(new Impl(file))
 {
 }
 
@@ -179,14 +149,9 @@ OnFlyDecoder::~OnFlyDecoder()
 {
 }
 
-OggFile * OnFlyDecoder::source()
+OggFile & OnFlyDecoder::source()
 {
     return impl_->source();
-}
-
-void OnFlyDecoder::reset(OggFile * source)
-{
-    impl_->reset(source);
 }
 
 bool OnFlyDecoder::poll()
@@ -197,6 +162,11 @@ bool OnFlyDecoder::poll()
 void OnFlyDecoder::volume(int value)
 {
     impl_->volume(value);
+}
+
+int OnFlyDecoder::mix(int16_t * out, int limit)
+{
+    return impl_->mix(out, limit);
 }
 
 }
