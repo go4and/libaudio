@@ -46,7 +46,7 @@ private:
 class Manager::Impl {
 public:
     Impl()
-        : channel_(-1), pollVersion_(0), pollSize_(0), lock_(0), sourcesSize_(0), mainThread_(s3eThreadGetCurrent())
+        : channel_(-1), lock_(0), sourcesSize_(0), delSize_(0), pollVersion_(0), pollSize_(0), mainThread_(s3eThreadGetCurrent())
     {
         atomicsGetTable(atomics);
 
