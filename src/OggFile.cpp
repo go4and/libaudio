@@ -1,7 +1,5 @@
 #include <IwDebug.h>
 
-#include <vorbis/codec.h>
-#define OV_EXCLUDE_STATIC_CALLBACKS
 #include <vorbis/vorbisfile.h>
 
 #include "audio/Buffer.h"
@@ -13,19 +11,20 @@ namespace audio {
 namespace {
 
 struct OVMemoryBuffer {
-    const char * data;
-    size_t size;
+    const char * begin;
+    const char * end;
     const char * pos;
 };
 
 size_t ovMemoryRead(void *ptr, size_t size, size_t nmemb, void *datasource)
 {
     OVMemoryBuffer * buffer = static_cast<OVMemoryBuffer*>(datasource);
-    size_t result = std::min<size_t>(size * nmemb, buffer->data + buffer->size - buffer->pos) / size;
+    size_t result = std::min<size_t>(size * nmemb, buffer->end - buffer->pos) / size;
     size = result * size;
     memcpy(ptr, buffer->pos, size);
     buffer->pos += size;
-    return result ? result : EOF;
+
+    return result;
 }
 
 int ovMemorySeek(void *datasource, ogg_int64_t offset, int whence)
@@ -33,13 +32,13 @@ int ovMemorySeek(void *datasource, ogg_int64_t offset, int whence)
     OVMemoryBuffer * buffer = static_cast<OVMemoryBuffer*>(datasource);
     switch(whence) {
     case 0:
-        buffer->pos = buffer->data + offset;
+        buffer->pos = buffer->begin + offset;
         break;
     case 1:
         buffer->pos += offset;
         break;
     case 2:
-        buffer->pos = buffer->data + buffer->size + offset;
+        buffer->pos = buffer->end + offset;
         break;
     }
     return 0;
@@ -53,10 +52,12 @@ int ovMemoryClose(void *datasource)
 long ovMemoryTell(void *datasource)
 {
     OVMemoryBuffer * buffer = static_cast<OVMemoryBuffer*>(datasource);
-    return buffer->pos - buffer->data;
+
+    long result = buffer->pos - buffer->begin;
+    return result;
 }
 
-ov_callbacks OVMemoryCallbacks = {
+ov_callbacks ovMemoryCallbacks = {
     ovMemoryRead,
     ovMemorySeek,
     ovMemoryClose,
@@ -71,11 +72,14 @@ public:
         : data_(buffer)
     {
         memset(&vf_, 0, sizeof(vf_));
-        buffer_.data = data_.data();
-        buffer_.size = data_.size();
+        buffer_.begin = data_.data();
+        buffer_.end = buffer_.begin + data_.size();
         buffer_.pos = data_.data();
-        int res = ov_open_callbacks(&buffer_, &vf_, 0, 0, OVMemoryCallbacks);
+        int res = ov_open_callbacks(&buffer_, &vf_, 0, 0, ovMemoryCallbacks);
         IwAssertMsg(AUDIO_OGGFILE, res >= 0, ("Failed to open ogg stream: %d", res));
+        
+        vorbis_info * info = ov_info(handle(), -1);
+        s3eDebugTracePrintf("rate: %d", info->rate);
     }
 
     ~Impl()

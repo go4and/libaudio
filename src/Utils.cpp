@@ -4,8 +4,10 @@
 
 #include <IwDebug.h>
 
+#include <vorbis/vorbisfile.h>
+#include <speex/speex_resampler.h>
+
 #include "audio/Buffer.h"
-#include "audio/Speex.h"
 
 #include "audio/Utils.h"
 
@@ -15,14 +17,14 @@ AtomicFunctions atomics;
 
 void resample(SpeexResamplerState * resampler, int16_t * buffer, size_t & filled, std::vector<int16_t> & out)
 {
-    spx_uint32_t inputRate, outputRate;
+    uint32_t inputRate, outputRate;
     speex_resampler_get_rate(resampler, &inputRate, &outputRate);
 
-    spx_uint32_t inlen = filled;
+    uint32_t inlen = filled;
     size_t oldSize = out.size();
     out.resize(oldSize + (static_cast<int64_t>(inlen) * outputRate / inputRate) + 1); 
     out.resize(out.capacity());
-    spx_uint32_t outlen = out.size() - oldSize;
+    uint32_t outlen = out.size() - oldSize;
     speex_resampler_process_int(resampler, 0, buffer, &inlen, &out[oldSize], &outlen);
     out.resize(oldSize + outlen);
     memmove(buffer, buffer + inlen, (filled - inlen) * 2);
@@ -31,7 +33,7 @@ void resample(SpeexResamplerState * resampler, int16_t * buffer, size_t & filled
 
 inline int combine(int a, int b)
 {
-    return (a + b);//  - a * b / 0x8000;
+    return (a + b);
 }
 
 inline int clamp(int v, int min, int max)

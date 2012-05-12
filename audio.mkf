@@ -6,10 +6,10 @@ options {
 }
 
 subprojects {
-  libvorbis
-  libvorbis/libvorbisfile
-  libogg
-  speex_resampler
+#  libvorbis/libvorbis_library
+#  libogg/libogg_library
+#  libvorbis/libvorbisfile_library
+  vorbis/vorbis_library
   atomics
 }
 
@@ -22,7 +22,6 @@ files
   Manager.h
   OggFile.h
   OnFlyDecoder.h
-  Speex.h
   Utils.h
 
   [src]

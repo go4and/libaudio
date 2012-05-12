@@ -1,5 +1,4 @@
 #include <s3eSound.h>
-#include <s3eThread.h>
 
 #include <IwDebug.h>
 
@@ -46,9 +45,10 @@ private:
 class Manager::Impl {
 public:
     Impl()
-        : thread_(0), channel_(-1), lock_(0), sourcesSize_(0), delSize_(0), pollVersion_(0), pollSize_(0), mainThread_(s3eThreadGetCurrent())
+        : thread_(0), channel_(-1), lock_(0), sourcesSize_(0), delSize_(0), pollVersion_(0), pollSize_(0)
     {
         atomicsGetTable(atomics);
+        s3eDebugTracePrintf("audio create");
     }
 
     ~Impl()
@@ -67,11 +67,15 @@ public:
 
     void start()
     {
+        s3eDebugTracePrintf("audio start()");
+
         processDelQueue();
         if(channel_ == -1)
         {
             pollVersion_ = 0;
             thread_ = s3eThreadCreate(&Impl::executeStatic, this);
+            s3eDebugTracePrintf("thread create: %p", thread_);
+
             channel_ = s3eSoundGetFreeChannel();
             s3eSoundChannelRegister(channel_, S3E_CHANNEL_GEN_AUDIO, &Impl::genAudio, this);
 
@@ -102,11 +106,11 @@ public:
                     ts.tv_nsec = 10000000;
                     atomics.nanosleep(&ts, 0);
                 }
-            s3eThreadJoin(thread_);
+            int res = s3eThreadJoin(thread_, 0);
+            s3eDebugTracePrintf("thread join: %d", res);
             thread_ = 0;
             channel_ = -1;
-        } else
-            IwAssertMsg(AUDIO_MANAGER, false, ("stop on stopped audio manager"));
+        }
 
         s3eDebugTracePrintf("audio::Manager::stop, done");
     }
@@ -141,17 +145,6 @@ public:
         } else
             return 0;
     }
-
-/*    void loopVolume(int value)
-    {
-        buffer1_.volume(value);
-        buffer2_.volume(value);
-    }
-
-    void loop(OggFile * file)
-    {
-        atomicsWrite(&loop_, file ? reinterpret_cast<int>(file) : -1);
-    }*/
 private:
     void lock(int id)
     {
@@ -290,6 +283,10 @@ private:
 
     void execute()
     {
+//        atomics.puts("execute");
+
+//        atomics.set_suspended(true);
+
         int pollVersion = -1;
         size_t pollSize = 0;
         Source * polls[limit];
@@ -299,6 +296,7 @@ private:
                 int newPollVersion = atomics.cas(&pollVersion_, 0, 0);
                 if(newPollVersion != pollVersion)
                 {
+//                    atomics.puts("new poll version");
                     if(newPollVersion == -1)
                         break;
                     lock(3);
@@ -311,16 +309,26 @@ private:
 
             bool worked = false;
             for(size_t i = 0; i != pollSize; ++i)
-                worked = polls[i]->poll() || worked;
-            if(!worked)
             {
+//                atomics.puts("poll enter");
+                worked = polls[i]->poll() || worked;
+//                atomics.puts("poll done");
+            }
+            if(!worked)
+                s3eDeviceYield(10);
+            else
+                s3eDeviceYield(0);
+/*            {
                 timespec ts;
                 ts.tv_sec = 0;
                 ts.tv_nsec = 10000000;
                 atomics.nanosleep(&ts, 0);
             } else
-                atomics.sched_yield();
+                atomics.sched_yield();*/
         }
+
+//        atomics.set_suspended(false);
+//        atomics.puts("execute done");
     }
 
     s3eThread * thread_;
@@ -335,7 +343,6 @@ private:
     volatile int pollVersion_;
     size_t pollSize_;
     Source * polls_[limit];
-    s3eThread * mainThread_;
 };
 
 Manager::Manager()

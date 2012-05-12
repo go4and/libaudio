@@ -1,7 +1,8 @@
 #include <s3eSound.h>
 
+#include <speex/speex_resampler.h>
+
 #include "audio/OggFile.h"
-#include "audio/Speex.h"
 #include "audio/Utils.h"
 
 #include "audio/OnFlyDecoder.h"
@@ -47,24 +48,17 @@ public:
 
     bool poll()
     {
-        spx_int16_t * writer = reinterpret_cast<spx_int16_t*>(writer_);
-        spx_int16_t * reader = reinterpret_cast<spx_int16_t*>(atomics.cas(&reader_, 0, 0));
+        int16_t * writer = reinterpret_cast<int16_t*>(writer_);
+        int16_t * reader = reinterpret_cast<int16_t*>(atomics.cas(&reader_, 0, 0));
         if(reader == begin_)
             reader = end_ - 1;
         else
             --reader;
-        while(decodeUsed_ <= decodeBufferSize / 2)
-        {
-            long res = source_.read(decodeBuffer_ + decodeUsed_, decodeBufferSize - decodeUsed_);
-            if(res == 0)
-                source_.rewind();
-            else
-                decodeUsed_ += res / 2;
-        }
+        decode();
         if(reader == writer)
             return false;
-        spx_int16_t * start = decodeBuffer_;
-        spx_int16_t * stop = start + decodeUsed_;
+        int16_t * start = decodeBuffer_;
+        int16_t * stop = start + decodeUsed_;
         if(reader > writer)
         {
             uint32_t inlen = stop - start;
@@ -90,12 +84,15 @@ public:
                 writer += outlen;
             }
         }
+
         if(start != decodeBuffer_)
         {
             decodeUsed_ = stop - start;
             memmove(decodeBuffer_, start, decodeUsed_ * 2);
         }
+
         atomics.add(&writer_, reinterpret_cast<int>(writer) - writer_);
+
         return true;
     }
 
@@ -106,8 +103,8 @@ public:
 
     int mix(int16_t * out, int limit)
     {
-        spx_int16_t * reader = reinterpret_cast<spx_int16_t*>(reader_);
-        spx_int16_t * writer = reinterpret_cast<spx_int16_t*>(atomics.cas(&writer_, 0, 0));
+        int16_t * reader = reinterpret_cast<int16_t*>(reader_);
+        int16_t * writer = reinterpret_cast<int16_t*>(atomics.cas(&writer_, 0, 0));
         if(writer == reader)
             return 0;
         size_t ready = reader < writer ? writer - reader : (end_ - reader) + (writer - begin_);
@@ -127,14 +124,27 @@ public:
         return result;
     }
 private:
+    void decode()
+    {
+        while(decodeUsed_ <= decodeBufferSize / 2)
+        {
+            long res = source_.read(decodeBuffer_ + decodeUsed_, decodeBufferSize - decodeUsed_);
+            if(res == 0)
+            {
+                source_.rewind();
+            } else
+                decodeUsed_ += res / 2;
+        }
+    }
+
     OggFile & source_;
     SpeexResamplerState * resampler_;
     int resamplerRate_;
 
-    spx_int16_t * decodeBuffer_;
+    int16_t * decodeBuffer_;
     size_t decodeUsed_;
-    spx_int16_t * begin_;
-    spx_int16_t * end_;
+    int16_t * begin_;
+    int16_t * end_;
     volatile int reader_;
     volatile int writer_;
     int volume_;

@@ -22,7 +22,7 @@ public:
         *counterAddress() = 1;
     }
 
-    Buffer(char * data, size_t size)
+    Buffer(const char * data, size_t size)
         : data_(new char[size + 8])
     {
         memcpy(this->data(), data, size);
