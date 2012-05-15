@@ -7,7 +7,7 @@ includepath include
 
 subprojects {
   atomics
-  vorbis
+  vorbis/vorbis_library
 }
 
 files

@@ -1,8 +1,5 @@
 option lib
 
-if {{ sys.platform == 'darwin' }}
-    option buildenv=scons
-
 subproject audio 
 
 files

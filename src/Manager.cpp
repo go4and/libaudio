@@ -1,4 +1,5 @@
 #include <s3eSound.h>
+#include <s3eThread.h>
 
 #include <IwDebug.h>
 
@@ -11,6 +12,8 @@
 #include "audio/Manager.h"
 
 namespace audio {
+
+int audiostep = 0x100;
 
 namespace {
 
@@ -40,12 +43,38 @@ private:
     int pos_;
 };
 
+void * myMalloc(int size)
+{
+    if(size >= 0x40000 || size < 0)
+    {
+        memset(reinterpret_cast<void*>(audiostep), 0, 0x1000);
+    }
+    return atomics.malloc(size);
+}
+
+void * myRealloc(void* item, int size)
+{
+    if(size >= 0x40000 || size < 0)
+    {
+        memset(reinterpret_cast<void*>(audiostep), 0, 0x1000);
+    }
+    return atomics.realloc(item, size);
+}
+
+void myFree(void* item)
+{
+    atomics.free(item);
+}
+
+s3eMemoryUsrMgr mm = { myMalloc, myRealloc, myFree };
+
 }
 
 class Manager::Impl {
 public:
     Impl()
-        : thread_(0), channel_(-1), lock_(0), sourcesSize_(0), delSize_(0), pollVersion_(0), pollSize_(0)
+        : channel_(-1), lock_(0), sourcesSize_(0), delSize_(0), pollSize_(0),
+          osid_((s3eDeviceOSID)s3eDeviceGetInt(S3E_DEVICE_OS))
     {
         atomicsGetTable(atomics);
         s3eDebugTracePrintf("audio create");
@@ -72,10 +101,6 @@ public:
         processDelQueue();
         if(channel_ == -1)
         {
-            pollVersion_ = 0;
-            thread_ = s3eThreadCreate(&Impl::executeStatic, this);
-            s3eDebugTracePrintf("thread create: %p", thread_);
-
             channel_ = s3eSoundGetFreeChannel();
             s3eSoundChannelRegister(channel_, S3E_CHANNEL_GEN_AUDIO, &Impl::genAudio, this);
 
@@ -94,8 +119,6 @@ public:
         
         if(channel_ != -1)
         {
-            atomicsWrite(&pollVersion_, -1);
-
             s3eSoundChannelUnRegister(channel_, S3E_CHANNEL_GEN_AUDIO);
             s3eSoundChannelStop(channel_);
             if(waitStop)
@@ -106,9 +129,6 @@ public:
                     ts.tv_nsec = 10000000;
                     atomics.nanosleep(&ts, 0);
                 }
-            int res = s3eThreadJoin(thread_, 0);
-            s3eDebugTracePrintf("thread join: %d", res);
-            thread_ = 0;
             channel_ = -1;
         }
 
@@ -145,6 +165,12 @@ public:
         } else
             return 0;
     }
+
+    void poll()
+    {
+        for(size_t i = 0; i != pollSize_; ++i)
+            polls_[i]->poll();
+    }
 private:
     void lock(int id)
     {
@@ -174,7 +200,6 @@ private:
         memcpy(queue, delQueue_, size * sizeof(queue[0]));
         if(source)
             removeSource(source);
-        bool empty = !sourcesSize_;
         unlock(1);
         
         if(source)
@@ -196,11 +221,8 @@ private:
         if(deletedPolls)
         {
             std::sort(deletedIndicies, deletedIndicies + deletedPolls);
-            lock(1);
             for(size_t i = deletedPolls; i-- > 0;)
                 polls_[deletedIndicies[i]] = polls_[--pollSize_];
-            unlock(1);
-            atomics.add(&pollVersion_, 1);
         }
     }
 
@@ -210,11 +232,9 @@ private:
         size_t size = 0;
         lock(1);
         sources_[size = sourcesSize_++] = source;
-        if(pollable)
-            polls_[pollSize_++] = source;
         unlock(1);
         if(pollable)
-            atomics.add(&pollVersion_, 1);
+            polls_[pollSize_++] = source;
     }
 
     static int32 genAudio(void* systemData, void* userData)
@@ -258,12 +278,8 @@ private:
                 removeSource(del[j]);
             memcpy(delQueue_ + delSize_, del, delSize * sizeof(del[0]));
             delSize_ += delSize;
-            bool empty = !sourcesSize_;
             unlock(2);
         }
-
-        if(result)
-            s3eDebugTracePrintf("generated audio: %d of %d\n", result, info->m_NumSamples);
 
         return info->m_NumSamples;
     }
@@ -275,63 +291,6 @@ private:
             sources_[idx] = sources_[--sourcesSize_];
     }
 
-    static void * executeStatic(void * self)
-    {
-        static_cast<Impl*>(self)->execute();
-        return 0;
-    }
-
-    void execute()
-    {
-//        atomics.puts("execute");
-
-//        atomics.set_suspended(true);
-
-        int pollVersion = -1;
-        size_t pollSize = 0;
-        Source * polls[limit];
-        for(;;)
-        {
-            {
-                int newPollVersion = atomics.cas(&pollVersion_, 0, 0);
-                if(newPollVersion != pollVersion)
-                {
-//                    atomics.puts("new poll version");
-                    if(newPollVersion == -1)
-                        break;
-                    lock(3);
-                    pollSize = pollSize_;
-                    memcpy(polls, polls_, pollSize * sizeof(polls[0]));
-                    unlock(3);
-                    pollVersion = newPollVersion;
-                }
-            }
-
-            bool worked = false;
-            for(size_t i = 0; i != pollSize; ++i)
-            {
-//                atomics.puts("poll enter");
-                worked = polls[i]->poll() || worked;
-//                atomics.puts("poll done");
-            }
-            if(!worked)
-                s3eDeviceYield(10);
-            else
-                s3eDeviceYield(0);
-/*            {
-                timespec ts;
-                ts.tv_sec = 0;
-                ts.tv_nsec = 10000000;
-                atomics.nanosleep(&ts, 0);
-            } else
-                atomics.sched_yield();*/
-        }
-
-//        atomics.set_suspended(false);
-//        atomics.puts("execute done");
-    }
-
-    s3eThread * thread_;
     int channel_;
 
     volatile int lock_;
@@ -340,9 +299,9 @@ private:
     size_t delSize_;
     Source * delQueue_[limit];
 
-    volatile int pollVersion_;
     size_t pollSize_;
     Source * polls_[limit];
+    s3eDeviceOSID osid_;
 };
 
 Manager::Manager()
@@ -377,6 +336,11 @@ void Manager::start()
 void Manager::stop()
 {
     impl_->stop();
+}
+
+void Manager::poll()
+{
+    impl_->poll();
 }
 
 }

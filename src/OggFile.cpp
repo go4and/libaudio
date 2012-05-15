@@ -75,11 +75,6 @@ public:
         buffer_.begin = data_.data();
         buffer_.end = buffer_.begin + data_.size();
         buffer_.pos = data_.data();
-        int res = ov_open_callbacks(&buffer_, &vf_, 0, 0, ovMemoryCallbacks);
-        IwAssertMsg(AUDIO_OGGFILE, res >= 0, ("Failed to open ogg stream: %d", res));
-        
-        vorbis_info * info = ov_info(handle(), -1);
-        s3eDebugTracePrintf("rate: %d", info->rate);
     }
 
     ~Impl()
@@ -90,12 +85,20 @@ public:
     long read(void * out, size_t len)
     {
         int bitstream = -1;
-        long result = ov_read(&vf_, static_cast<char*>(out), len, 0, 2, 1, &bitstream);
+        long result = ov_read(handle(), static_cast<char*>(out), len, 0, 2, 1, &bitstream);
         return result;
     }
 
     OggVorbis_File * handle()
     {
+        if(vf_.datasource == 0)
+        {
+            int res = ov_open_callbacks(&buffer_, &vf_, 0, 0, ovMemoryCallbacks);
+            IwAssertMsg(AUDIO_OGGFILE, res >= 0, ("Failed to open ogg stream: %d", res));
+            
+            vorbis_info * info = ov_info(handle(), -1);
+            s3eDebugTracePrintf("rate: %d", static_cast<int>(info->rate));
+        }
         return &vf_;
     }
 private:

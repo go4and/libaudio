@@ -10,7 +10,7 @@ typedef struct SpeexResamplerState_ SpeexResamplerState;
 
 namespace audio {
 
-const size_t decodeBufferSize = 0x2000;
+const size_t decodeBufferSize = 0x800;
 
 class Buffer;
 class OggFile;

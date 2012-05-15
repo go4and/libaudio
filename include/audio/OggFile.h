@@ -2,13 +2,15 @@
 
 #include <memory>
 
+#include "audio/File.h"
+
 struct OggVorbis_File;
 
 namespace audio {
 
 class Buffer;
 
-class OggFile {
+class OggFile : public File {
 public:
     OggFile(const Buffer & buffer);
     ~OggFile();

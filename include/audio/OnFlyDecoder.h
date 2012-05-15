@@ -2,18 +2,18 @@
 
 #include <memory>
 
-#include "audio/Manager.h"
+#include "audio/Source.h"
 
 namespace audio {
 
-class OggFile;
+class File;
 
 class OnFlyDecoder : public Source {
 public:
-    OnFlyDecoder(bool owned, OggFile & file);
+    OnFlyDecoder(bool owned, File & file);
     ~OnFlyDecoder();
 
-    OggFile & source();
+    File & source();
     void volume(int value);
 
     bool poll();

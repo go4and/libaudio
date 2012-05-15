@@ -6,9 +6,6 @@ options {
 }
 
 subprojects {
-#  libvorbis/libvorbis_library
-#  libogg/libogg_library
-#  libvorbis/libvorbisfile_library
   vorbis/vorbis_library
   atomics
 }
@@ -19,9 +16,12 @@ files
   (include/audio)
   Buffer.h
   Decoder.h
+  File.h
   Manager.h
   OggFile.h
   OnFlyDecoder.h
+  RawFile.h
+  Source.h
   Utils.h
 
   [src]
