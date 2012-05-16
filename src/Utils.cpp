@@ -27,6 +27,8 @@ void resample(SpeexResamplerState * resampler, int16_t * buffer, size_t & filled
     uint32_t outlen = out.size() - oldSize;
     speex_resampler_process_int(resampler, 0, buffer, &inlen, &out[oldSize], &outlen);
     out.resize(oldSize + outlen);
+//    out.insert(out.end(), buffer, buffer + inlen);
+    
     memmove(buffer, buffer + inlen, (filled - inlen) * 2);
     filled -= inlen;
 }

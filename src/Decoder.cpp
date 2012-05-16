@@ -12,6 +12,12 @@
 
 namespace audio {
 
+namespace {
+
+const size_t decodeBufferSize = 0x2000;
+
+}
+
 Decoder::Decoder()
     : decodeBuffer_(new int16_t[decodeBufferSize])
 {
@@ -27,16 +33,25 @@ void decodeFile(SpeexResamplerState * resampler, OggFile & file, int16_t * decod
     size_t decodeUsed = 0;
     for(;;)
     {
-        long res = file.read(decodeBuffer + decodeUsed, (decodeBufferSize - decodeUsed) * 2);
-        if(res < 0)
-            break;
-
-        decodeUsed += res / 2;
-        if(decodeUsed)
+        long res = 1;
+        while(decodeUsed * 2 < decodeBufferSize)
         {
-            resample(resampler, decodeBuffer, decodeUsed, out);
+            int request = (decodeBufferSize - decodeUsed) * 2;
+            if(!request)
+            {
+                res = 1;
+                break;
+            }
+            res = file.read(decodeBuffer + decodeUsed, request);
+            if(res <= 0)
+                break;
+            decodeUsed += res / 2;
         }
-        if(!res)
+
+        if(decodeUsed)
+            resample(resampler, decodeBuffer, decodeUsed, out);
+
+        if(res <= 0)
             break;
     }
 
@@ -51,7 +66,7 @@ Buffer Decoder::decode(OggFile & file, int volume)
     int err = 0;
     int inputRate = file.rate();
 
-    SpeexResamplerState * resampler = speex_resampler_init(1, inputRate, outputRate, 10, &err);
+    SpeexResamplerState * resampler = speex_resampler_init(1, inputRate, outputRate, 0, &err);
 
     buffer_.clear();
     decodeFile(resampler, file, decodeBuffer_, buffer_);

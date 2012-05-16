@@ -10,10 +10,8 @@ typedef struct SpeexResamplerState_ SpeexResamplerState;
 
 namespace audio {
 
-const size_t decodeBufferSize = 0x800;
-
 class Buffer;
-class OggFile;
+class File;
 
 void resample(SpeexResamplerState * resampler, int16_t * buffer, size_t & filled, std::vector<int16_t> & out);
 void mix(bool mix, int16_t * out, int16_t * inp, int volume, size_t samples);

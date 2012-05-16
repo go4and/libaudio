@@ -9,21 +9,11 @@
 
 namespace audio {
 
+namespace {
+
+const size_t decodeBufferSize = 0x800;
 const size_t bufferSize = 0x8000;
 
-extern int audiostep;
-
-int speex_resampler_process_intx(SpeexResamplerState *st, spx_uint32_t channel_index, 
-                          const spx_int16_t *in, 
-                          spx_uint32_t *in_len, 
-                          spx_int16_t *out, 
-                          spx_uint32_t *out_len)
-{
-    spx_uint32_t len = std::min(*in_len, *out_len);
-    memcpy(out, in, len * 2);
-    *in_len = len;
-    *out_len = len;
-    return 0;
 }
 
 class OnFlyDecoder::Impl {
@@ -67,8 +57,6 @@ public:
 
     bool poll()
     {
-        audiostep = 0x101;
-        
         int16_t * writer = reinterpret_cast<int16_t*>(writer_);
         int16_t * reader = reinterpret_cast<int16_t*>(atomics.cas(&reader_, 0, 0));
         if(reader == begin_)
@@ -76,17 +64,14 @@ public:
         else
             --reader;
 
-        audiostep = 0x102;
         decode();
 
-        audiostep = 0x103;
         if(reader == writer)
             return false;
         int avail = reader > writer ? reader - writer : (end_ - writer) + (reader - begin_);
         if(resampler_ == 0)
             createResampler();
 
-        audiostep = 0x104;
         int16_t * start = decodeBuffer_;
         int16_t * stop = start + decodeUsed_;
         if(reader > writer)
@@ -118,14 +103,12 @@ public:
             }
         }
         
-        audiostep = 0x105;
         if(start != decodeBuffer_)
         {
             decodeUsed_ = stop - start;
             memmove(decodeBuffer_, start, decodeUsed_ * 2);
         }
 
-        audiostep = 0x106;
         atomics.add(&writer_, reinterpret_cast<int>(writer) - writer_);
 
         return true;
